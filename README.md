@@ -32,6 +32,7 @@ Supports Windows, MacOS and Linux.
 - install from Chocolatey
 Follow this guide: https://chocolatey.org/packages/spicetify-cli
 - [Usage](https://github.com/khanhas/spicetify-cli/wiki/Basic-Usage)
+- [themes](https://github.com/morpheusthewhite/spicetify-themes)
 - change theme
 - update
 
