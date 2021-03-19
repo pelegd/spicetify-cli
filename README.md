@@ -27,8 +27,8 @@ Supports Windows, MacOS and Linux.
 #### [Wiki](https://github.com/khanhas/spicetify-cli/wiki)
 
 
-### installation and custemizasion in short
-- Windows
+### Installation and Custemizasion in short
+## In Windows
 - install
 - run
 - change theme
