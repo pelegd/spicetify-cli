@@ -29,11 +29,8 @@ Supports Windows, MacOS and Linux.
 
 ### Installation and Custemizasion in short
 ## In Windows
-- install
-
-With Chocolatey
+- install from Chocolatey
 Follow this guide: https://chocolatey.org/packages/spicetify-cli
-
 - run
 - change theme
 - update
