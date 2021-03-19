@@ -28,9 +28,9 @@ Supports Windows, MacOS and Linux.
 
 
 ### installation and custemizasion in short
-Windows
-install
-run
-change theme
-update
+- Windows
+- install
+- run
+- change theme
+- update
 
