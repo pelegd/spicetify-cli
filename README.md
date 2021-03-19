@@ -25,3 +25,12 @@ Supports Windows, MacOS and Linux.
 #### [Extensions](https://github.com/khanhas/spicetify-cli/wiki/Extensions)
 #### [Custom Apps](https://github.com/khanhas/spicetify-cli/wiki/Custom-Apps)
 #### [Wiki](https://github.com/khanhas/spicetify-cli/wiki)
+
+
+### installation and custemizasion in short
+Windows
+install
+run
+change theme
+update
+
