@@ -195,6 +195,35 @@ declare namespace Spicetify {
     const BridgeAPI: any;
     const CosmosAPI: any;
     /**
+     * Async wrappers of CosmosAPI
+     */
+    namespace CosmosAsync {
+        type Action = "DELETE" | "GET" | "HEAD" | "PATCH" | "POST" | "PUT" | "SUB";
+        interface Error {
+            code: number;
+            error: string;
+            message: string;
+        }
+
+        interface Response {
+            body: any;
+            headers: object;
+            status: number;
+            uri: string;
+        }
+
+        function head(url: string, headers?: object): Promise<Response.headers>;
+        function get(url: string, body?: any, headers?: object): Promise<Response.body>;
+        function post(url: string, body?: any, headers?: object): Promise<Response.body>;
+        function put(url: string, body?: any, headers?: object): Promise<Response.body>;
+        function del(url: string, body?: any, headers?: object): Promise<Response.body>;
+        function patch(url: string, body?: any, headers?: object): Promise<Response.body>;
+        function sub(url: string, callback: ((b: Response.body) => void), onError?: ((e: Error) => void), body?: any, headers?: object): Promise<Response.body>;
+        function postSub(url: string, body?: any, callback: ((b: Response.body) => void), onError?: ((e: Error) => void)): Promise<Response.body>;
+        function request(method: Action, url: string, body?: any, headers?: object): Promise<Response>;
+        function resolve(method: Action, url: string, body?: any, headers?: object): Promise<Response>;
+    }
+    /**
      * Fetch interesting colors from URI.
      * @param uri Any type of URI that has artwork (playlist, track, album, artist, show, ...)
      */
@@ -1130,9 +1159,10 @@ declare namespace Spicetify {
              * List of valid icons to use.
              */
             static readonly iconList: Icon[];
-            constructor(name: string, onClick: (uris: string[]) => void, shouldAdd: (uris: string[]) => boolean = (uris: string[]) => true, icon?: Icon);
+            constructor(name: string, onClick: (uris: string[]) => void, shouldAdd: (uris: string[]) => boolean = (uris: string[]) => true, icon?: Icon, disabled?: boolean);
             set name(text: string);
             set icon(name: Icon);
+            set disabled(bool: boolean);
             /**
              * A function returning boolean determines whether item should be prepended.
              */
@@ -1160,9 +1190,10 @@ declare namespace Spicetify {
              * List of valid icons to use.
              */
             static readonly iconList: Icon[];
-            constructor(name: string, subItems: Iterable<Item>, shouldAdd = (uris) => true, icon?: Icon);
+            constructor(name: string, subItems: Iterable<Item>, shouldAdd = (uris) => true, icon?: Icon, disabled?: boolean);
             set name(text: string);
             set icon(name: Icon);
+            set disabled(bool: boolean);
             /**
              * Replace current `Item`s list
              */
@@ -1185,37 +1216,34 @@ declare namespace Spicetify {
     }
 
     /**
-     * Fetch and Override A/B test flags
+     * Popup Modal
      */
-    namespace Abba {
-        type Flag = {
-            featureName: string;
-            cell?: string;
-        };
+    namespace PopupModal {
+        interface Content {
+            MODAL_TITLE?: string;
 
-        /**
-         * Get flag(s) value.
-         */
-        function getFlag(name: string | string[], callback: (flags: Flag[]) => void): void;
-        /**
-         * Get list of flags that is currently used by Spotify.
-         */
-        function getInUseFlags(callback: (flagNames: string[]) => void): void;
-        /**
-         * Get list all available flags.
-         */
-        function getAllFlags(callback: (flags: Flag[]) => void): void;
-        /**
-         * Get list of flags to be overrided and its their values.
-         */
-        function getOverrideFlags(): {[string]: string};
-        /**
-         * Add a flag that is going to be overrided.
-         */
-        function addOverrideFlag(name: string, value: string): void;
-        /**
-         * Remove a overrided flag.
-         */
-        function removeOverrideFlag(name: string): void;
+            URI?: string;
+            MESSAGE?: string;
+            CONTENT?: Element;
+
+            BACKDROP_DONT_COVER_PLAYER?: boolean;
+            HEIGHT?: number;
+
+            BUTTONS?: {
+                OK?: boolean;
+                CANCEL?: boolean;
+            }
+
+            OK_BUTTON_LABEL?: string;
+            CANCEL_BUTTON_LABEL?: string;
+
+            onOk?: () => void;
+            onCancel?: () => void;
+            onShow?: () => void;
+            onHide?: () => void;
+        }
+
+        function display(e: Content): void;
+        function hide(): void;
     }
 }
