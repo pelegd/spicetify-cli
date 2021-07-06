@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +15,7 @@ import (
 )
 
 // Apply .
-func Apply() {
+func Apply(spicetifyVersion string) {
 	checkStates()
 	InitSetting()
 
@@ -58,21 +60,21 @@ func Apply() {
 		utils.PrintGreen("OK")
 	}
 
+	if preprocSection.Key("expose_apis").MustBool(false) {
+		utils.CopyFile(
+			filepath.Join(utils.GetJsHelperDir(), "spicetifyWrapper.js"),
+			filepath.Join(appDestPath, "xpui", "helper"))
+	}
+
 	extentionList := featureSection.Key("extensions").Strings("|")
 	customAppsList := featureSection.Key("custom_apps").Strings("|")
 
 	utils.PrintBold(`Applying additional modifications:`)
 	apply.AdditionalOptions(appDestPath, apply.Flag{
-		ExperimentalFeatures: toTernary("experimental_features"),
-		FastUserSwitching:    toTernary("fastUser_switching"),
-		Home:                 toTernary("home"),
-		LyricAlwaysShow:      toTernary("lyric_always_show"),
-		LyricForceNoSync:     toTernary("lyric_force_no_sync"),
-		Radio:                toTernary("radio"),
-		SongPage:             toTernary("song_page"),
-		VisHighFramerate:     toTernary("visualization_high_framerate"),
-		Extension:            extentionList,
-		CustomApp:            customAppsList,
+		Extension:     extentionList,
+		CustomApp:     customAppsList,
+		SidebarConfig: featureSection.Key("sidebar_config").MustBool(false),
+		HomeConfig:    featureSection.Key("home_config").MustBool(false),
 	})
 	utils.PrintGreen("OK")
 
@@ -84,7 +86,7 @@ func Apply() {
 	}
 
 	if len(customAppsList) > 0 {
-		utils.PrintBold(`Creating custom apps symlinks:`)
+		utils.PrintBold(`Transferring custom apps:`)
 		pushApps(customAppsList...)
 		utils.PrintGreen("OK")
 	}
@@ -101,6 +103,11 @@ func Apply() {
 		utils.PrintInfo(`You are using Spotify Windows Store version, which is only partly supported.
 Stop using Spicetify with Windows Store version unless you absolutely CANNOT install normal Spotify from installer.
 Modded Spotify cannot be launched using original Shortcut/Start menu tile. To correctly launch Spotify with modification, please make a desktop shortcut that execute "spicetify auto". After that, you can change its icon, pin to start menu or put in startup folder.`)
+	}
+
+	backupSpicetifyVersion := backupSection.Key("with").MustString("")
+	if spicetifyVersion != backupSpicetifyVersion {
+		utils.PrintInfo(`Preprocessed Spotify data is outdated. Please run "spicetify restore backup apply" to receive new features and bug fixes`)
 	}
 }
 
@@ -123,6 +130,12 @@ func UpdateTheme() {
 	}
 }
 
+type spicetifyConfigJson struct {
+	ThemeName  string                       `json:"theme_name"`
+	SchemeName string                       `json:"scheme_name"`
+	Schemes    map[string]map[string]string `json:"schemes"`
+}
+
 func updateCSS() {
 	var scheme map[string]string = nil
 	if colorSection != nil {
@@ -133,6 +146,33 @@ func updateCSS() {
 		theme = ""
 	}
 	apply.UserCSS(appDestPath, theme, scheme)
+
+	var configJson spicetifyConfigJson
+	configJson.ThemeName = settingSection.Key("current_theme").MustString("")
+	configJson.SchemeName = settingSection.Key("color_scheme").MustString("")
+
+	if colorCfg != nil {
+		colorsJson := make(map[string]map[string]string)
+		for _, section := range colorCfg.Sections() {
+			name := section.Name()
+			colorsJson[name] = make(map[string]string)
+
+			for _, key := range section.Keys() {
+				colorsJson[name][key.Name()] = key.MustString("")
+			}
+		}
+		configJson.Schemes = colorsJson
+	}
+
+	configJsonBytes, err := json.MarshalIndent(configJson, "", "    ")
+	if err != nil {
+		utils.PrintWarning("Cannot convert colors.ini to JSON")
+	} else {
+		os.WriteFile(
+			filepath.Join(appDestPath, "xpui", "spicetify-config.json"),
+			configJsonBytes,
+			0700)
+	}
 }
 
 func updateAssets() {
@@ -205,7 +245,7 @@ func getExtensionPath(name string) (string, error) {
 
 func pushExtensions(list ...string) {
 	var err error
-	var zlinkFolder = filepath.Join(appDestPath, "zlink")
+	var dest = filepath.Join(appDestPath, "xpui", "extensions")
 
 	for _, v := range list {
 		var extName, extPath string
@@ -222,13 +262,13 @@ func pushExtensions(list ...string) {
 			}
 		}
 
-		if err = utils.CopyFile(extPath, zlinkFolder); err != nil {
+		if err = utils.CopyFile(extPath, dest); err != nil {
 			utils.PrintError(err.Error())
 			continue
 		}
 
 		if strings.HasSuffix(extName, ".mjs") {
-			utils.ModifyFile(filepath.Join(zlinkFolder, extName), func(content string) string {
+			utils.ModifyFile(filepath.Join(dest, extName), func(content string) string {
 				lines := strings.Split(content, "\n")
 				for i := 0; i < len(lines); i++ {
 					mapping := utils.FindSymbol("", lines[i], []string{
@@ -261,19 +301,72 @@ func getCustomAppPath(name string) (string, error) {
 	return "", errors.New("Custom app not found")
 }
 
+type appManifest struct {
+	Files []string `json:"subfiles"`
+}
+
 func pushApps(list ...string) {
-	for _, name := range list {
-		customAppPath, err := getCustomAppPath(name)
+	for _, app := range list {
+		appName := `spicetify-routes-` + app
+
+		customAppPath, err := getCustomAppPath(app)
 		if err != nil {
-			utils.PrintError(`Custom app "` + name + `" not found.`)
+			utils.PrintError(`Custom app "` + app + `" not found.`)
 			continue
 		}
 
-		customAppDestPath := filepath.Join(appDestPath, name)
-
-		if err = utils.CreateJunction(customAppPath, customAppDestPath); err != nil {
-			utils.Fatal(err)
+		jsFile := filepath.Join(customAppPath, "index.js")
+		jsFileContent, err := os.ReadFile(jsFile)
+		if err != nil {
+			utils.PrintError(`Custom app "` + app + `" does not have index.js`)
+			continue
 		}
+
+		manifestFile := filepath.Join(customAppPath, "manifest.json")
+		manifestFileContent, err := os.ReadFile(manifestFile)
+		if err != nil {
+			manifestFileContent = []byte{'{', '}'}
+		}
+		os.WriteFile(
+			filepath.Join(appDestPath, "xpui", appName+".json"),
+			manifestFileContent,
+			0700)
+
+		var manifestJson appManifest
+		if err = json.Unmarshal(manifestFileContent, &manifestJson); err == nil {
+			for _, subfile := range manifestJson.Files {
+				subfilePath := filepath.Join(customAppPath, subfile)
+				subfileContent, err := os.ReadFile(subfilePath)
+				if err != nil {
+					continue
+				}
+				jsFileContent = append(jsFileContent, '\n')
+				jsFileContent = append(jsFileContent, subfileContent...)
+			}
+		}
+
+		jsTemplate := fmt.Sprintf(
+			`(("undefined"!=typeof self?self:global).webpackChunkopen=("undefined"!=typeof self?self:global).webpackChunkopen||[])
+.push([["%s"],{"%s":(e,t,n)=>{
+"use strict";n.r(t),n.d(t,{default:()=>render});
+%s
+}}]);`,
+			appName, appName, jsFileContent)
+
+		os.WriteFile(
+			filepath.Join(appDestPath, "xpui", appName+".js"),
+			[]byte(jsTemplate),
+			0700)
+
+		cssFile := filepath.Join(customAppPath, "style.css")
+		cssFileContent, err := os.ReadFile(cssFile)
+		if err != nil {
+			cssFileContent = []byte{}
+		}
+		os.WriteFile(
+			filepath.Join(appDestPath, "xpui", appName+".css"),
+			[]byte(cssFileContent),
+			0700)
 	}
 }
 
@@ -289,7 +382,7 @@ func nodeModuleSymlink() {
 
 	utils.PrintBold(`Found node_modules folder. Creating node_modules symlink:`)
 
-	nodeModuleDest := filepath.Join(appDestPath, "zlink", "node_modules")
+	nodeModuleDest := filepath.Join(appDestPath, "xpui", "node_modules")
 	if err = utils.CreateJunction(nodeModulePath, nodeModuleDest); err != nil {
 		utils.PrintError("Cannot create node_modules symlink")
 		return

@@ -31,16 +31,10 @@ var (
 			"disable_upgrade_check": "1",
 		},
 		"AdditionalOptions": {
-			"experimental_features":        "0",
-			"fastUser_switching":           "0",
-			"home":                         "0",
-			"lyric_always_show":            "0",
-			"lyric_force_no_sync":          "0",
-			"radio":                        "0",
-			"song_page":                    "0",
-			"visualization_high_framerate": "0",
-			"extensions":                   "",
-			"custom_apps":                  "",
+			"extensions":     "",
+			"custom_apps":    "",
+			"sidebar_config": "1",
+			"home_config":    "1",
 		},
 		"Patch": {},
 	}
@@ -73,7 +67,7 @@ func ParseConfig(configPath string) Config {
 			content: getDefaultConfig(),
 		}
 		defaultConfig.Write()
-		PrintSuccess("Default config.ini generated.")
+		PrintSuccess("Default config-xpui.ini generated.")
 		return defaultConfig
 	}
 
@@ -159,6 +153,7 @@ func getDefaultConfig() *ini.File {
 	}
 	version.Comment = "DO NOT CHANGE!"
 	version.NewKey("version", "")
+	version.NewKey("with", "")
 	return cfg
 }
 

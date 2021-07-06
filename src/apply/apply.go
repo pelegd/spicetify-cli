@@ -12,24 +12,18 @@ import (
 
 // Flag enables/disables additional feature
 type Flag struct {
-	ExperimentalFeatures utils.TernaryBool
-	FastUserSwitching    utils.TernaryBool
-	Home                 utils.TernaryBool
-	LyricAlwaysShow      utils.TernaryBool
-	LyricForceNoSync     utils.TernaryBool
-	Radio                utils.TernaryBool
-	SongPage             utils.TernaryBool
-	VisHighFramerate     utils.TernaryBool
-	Extension            []string
-	CustomApp            []string
+	Extension     []string
+	CustomApp     []string
+	SidebarConfig bool
+	HomeConfig    bool
 }
 
 // AdditionalOptions .
 func AdditionalOptions(appsFolderPath string, flags Flag) {
 	filesToModified := map[string]func(path string, flags Flag){
-		filepath.Join(appsFolderPath, "zlink", "zlink.bundle.js"):   zlinkMod,
-		filepath.Join(appsFolderPath, "zlink", "index.html"):        htmlMod,
-		filepath.Join(appsFolderPath, "lyrics", "lyrics.bundle.js"): lyricsMod,
+		filepath.Join(appsFolderPath, "xpui", "index.html"):          htmlMod,
+		filepath.Join(appsFolderPath, "xpui", "xpui.js"):             insertCustomApp,
+		filepath.Join(appsFolderPath, "xpui", "xpui-routes-home.js"): insertHomeConfig,
 	}
 
 	for file, call := range filesToModified {
@@ -39,112 +33,76 @@ func AdditionalOptions(appsFolderPath string, flags Flag) {
 
 		call(file, flags)
 	}
+
+	if flags.SidebarConfig {
+		utils.CopyFile(
+			filepath.Join(utils.GetJsHelperDir(), "sidebarConfig.js"),
+			filepath.Join(appsFolderPath, "xpui", "helper"))
+	}
+
+	if flags.HomeConfig {
+		utils.CopyFile(
+			filepath.Join(utils.GetJsHelperDir(), "homeConfig.js"),
+			filepath.Join(appsFolderPath, "xpui", "helper"))
+	}
 }
 
-// UserCSS creates user.css file in "zlink", "login" and "settings" apps.
+// UserCSS creates user.css file in "xpui".
 // To not use custom css, set `themeFolder` to blank string
 // To use default color scheme, set `scheme` to `nil`
 func UserCSS(appsFolderPath, themeFolder string, scheme map[string]string) {
 	css := []byte(getColorCSS(scheme) + getUserCSS(themeFolder))
-	// "login" app is initially loaded apps so it needs its own assets,
-	// unlike other apps that are able to depend on zlink assets.
-	// "setting" app can be accessed from "login" app so it also needs its css file
-	// else it would not load.
-	apps := []string{"zlink", "login", "settings"}
 
-	for _, v := range apps {
-		dest := filepath.Join(appsFolderPath, v, "css", "user.css")
-		if err := ioutil.WriteFile(dest, css, 0700); err != nil {
-			utils.Fatal(err)
-		}
+	dest := filepath.Join(appsFolderPath, "xpui", "user.css")
+	if err := ioutil.WriteFile(dest, css, 0700); err != nil {
+		utils.Fatal(err)
 	}
 }
 
 // UserAsset .
 func UserAsset(appsFolderPath, themeFolder string) {
 	var assetsPath = getAssetsPath(themeFolder)
-
-	if err := utils.Copy(assetsPath, appsFolderPath, true, nil); err != nil {
+	var xpuiPath = filepath.Join(appsFolderPath, "xpui")
+	if err := utils.Copy(assetsPath, xpuiPath, true, nil); err != nil {
 		utils.Fatal(err)
 	}
 }
 
 func htmlMod(htmlPath string, flags Flag) {
-	if len(flags.Extension) == 0 {
+	if len(flags.Extension) == 0 &&
+		!flags.HomeConfig &&
+		!flags.SidebarConfig {
 		return
 	}
 
-	extensionsHTML := ""
+	extensionsHTML := "\n"
+	helperHTML := "\n"
+
+	if flags.SidebarConfig {
+		helperHTML += `<script defer src="helper/sidebarConfig.js"></script>` + "\n"
+	}
+
+	if flags.HomeConfig {
+		helperHTML += `<script defer src="helper/homeConfig.js"></script>` + "\n"
+	}
 
 	for _, v := range flags.Extension {
 		if strings.HasSuffix(v, ".mjs") {
-			extensionsHTML += `<script type="module" src="` + v + `"></script>` + "\n"
+			extensionsHTML += `<script defer type="module" src="extensions/` + v + `"></script>` + "\n"
 		} else {
-			extensionsHTML += `<script src="` + v + `"></script>` + "\n"
+			extensionsHTML += `<script defer src="extensions/` + v + `"></script>` + "\n"
 		}
 	}
 
 	utils.ModifyFile(htmlPath, func(content string) string {
 		utils.Replace(
 			&content,
-			`<!\-\-Extension\-\->`,
-			"${0}\n"+extensionsHTML,
-		)
-		return content
-	})
-}
-
-func lyricsMod(jsPath string, flags Flag) {
-	if flags.VisHighFramerate.IsDefault() && flags.LyricForceNoSync.IsDefault() {
-		return
-	}
-
-	utils.ModifyFile(jsPath, func(content string) string {
-		if !flags.VisHighFramerate.IsDefault() {
-			utils.Replace(&content, `[\w_]+\.highVisualizationFrameRate\s?=`, `${0}`+flags.VisHighFramerate.ToForceOperator())
-		}
-
-		if !flags.LyricForceNoSync.IsDefault() {
-			utils.Replace(&content, `[\w_]+\.forceNoSyncLyrics\s?=`, `${0}`+flags.LyricForceNoSync.ToForceOperator())
-		}
-
-		return content
-	})
-}
-
-func zlinkMod(jsPath string, flags Flag) {
-	utils.ModifyFile(jsPath, func(content string) string {
-		// Disable WebUI button permanently to prevent confusion for user.
-		utils.Replace(&content, `(enableDarkMode:)("Enabled")`, `${1}false&&${2}`)
-
-		if !flags.ExperimentalFeatures.IsDefault() {
-			utils.Replace(&content, `[\w_]+(&&[\w_]+\.default.createElement\([\w_]+\.default,\{name:"experiments)`, flags.ExperimentalFeatures.ToString()+`${1}`)
-		}
-
-		if !flags.FastUserSwitching.IsDefault() {
-			utils.Replace(&content, `[\w_]+(&&[\w_]+\.default.createElement\([\w_]+\.default,\{name:"switch\-user)`, flags.FastUserSwitching.ToString()+`${1}`)
-		}
-
-		if !flags.Home.IsDefault() {
-			utils.Replace(&content, `(isHomeEnabled:)("Enabled")`, `${1}`+flags.Home.ToForceOperator()+`${2}`)
-		}
-
-		if !flags.LyricAlwaysShow.IsDefault() {
-			utils.Replace(&content, `(lyricsEnabled\()[\w_]+&&\(.+?\)`, `${1}`+flags.LyricAlwaysShow.ToString())
-		}
-
-		if !flags.Radio.IsDefault() {
-			utils.Replace(&content, `"1"===[\w_]+\.productState\.radio`, flags.Radio.ToString())
-		}
-
-		if !flags.SongPage.IsDefault() {
-			utils.Replace(&content, `window\.initialState\.isSongPageEnabled`, flags.SongPage.ToString())
-		}
-
-		if len(flags.CustomApp) > 0 {
-			insertCustomApp(&content, flags.CustomApp)
-		}
-
+			`<\!-- spicetify helpers -->`,
+			"${0}"+helperHTML)
+		utils.Replace(
+			&content,
+			`</body>`,
+			extensionsHTML+"${0}")
 		return content
 	})
 }
@@ -171,6 +129,7 @@ func getUserCSS(themeFolder string) string {
 
 func getColorCSS(scheme map[string]string) string {
 	var variableList string
+	var variableRGBList string
 	mergedScheme := make(map[string]string)
 
 	for k, v := range scheme {
@@ -185,66 +144,112 @@ func getColorCSS(scheme map[string]string) string {
 
 	for k, v := range mergedScheme {
 		parsed := utils.ParseColor(v)
-		variableList += fmt.Sprintf(`
-    --modspotify_%s: #%s;
-    --modspotify_rgb_%s: %s;`,
-			k, parsed.Hex(),
-			k, parsed.RGB())
+		variableList += fmt.Sprintf("    --spice-%s: #%s;\n", k, parsed.Hex())
+		variableRGBList += fmt.Sprintf("    --spice-rgb-%s: %s;\n", k, parsed.RGB())
 	}
 
-	return fmt.Sprintf(":root {%s\n}\n", variableList)
+	return fmt.Sprintf(":root {\n%s\n%s\n}\n", variableList, variableRGBList)
 }
 
-func insertCustomApp(zlinkContent *string, appList []string) {
-	symbol1 := utils.FindSymbol("React and SidebarList", *zlinkContent, []string{
-		`([\w_]+)\.default\.createElement\(([\w_]+)\.default,\{title:[\w_]+\.default\.get\("(?:desktop\.zlink\.)?your_music\.app_name"\)`,
+func insertCustomApp(jsPath string, flags Flag) {
+	utils.ModifyFile(jsPath, func(content string) string {
+		reactSymbs := utils.FindSymbol(
+			"Custom app React symbols",
+			content,
+			[]string{
+				`lazy\(\(\(\)=>(\w+)\.(\w+)\(\d+\).then\(\w+\.bind\(\w+,\d+\)\)\)\)`})
+		eleSymbs := utils.FindSymbol(
+			"Custom app React Element",
+			content,
+			[]string{
+				`createElement\(([\w\.]+),\{path:"\/collection"\}`})
+
+		appMap := ""
+		appReactMap := ""
+		appEleMap := ""
+		cssEnableMap := ""
+		appNameArray := ""
+
+		for index, app := range flags.CustomApp {
+			appName := `spicetify-routes-` + app
+			appMap += fmt.Sprintf(`"%s":"%s",`, appName, appName)
+			appNameArray += fmt.Sprintf(`"%s",`, app)
+
+			appReactMap += fmt.Sprintf(
+				`,spicetifyApp%d=Spicetify.React.lazy((()=>%s.%s("%s").then(%s.bind(%s,"%s"))))`,
+				index, reactSymbs[0], reactSymbs[1],
+				appName, reactSymbs[0], reactSymbs[0], appName)
+
+			appEleMap += fmt.Sprintf(
+				`Spicetify.React.createElement(%s,{path:"/%s"},Spicetify.React.createElement(spicetifyApp%d,null)),`,
+				eleSymbs[0], app, index)
+
+			cssEnableMap += fmt.Sprintf(`,"%s":1`, appName)
+		}
+
+		utils.Replace(
+			&content,
+			`\{(\d+:"xpui)`,
+			`{`+appMap+`${1}`)
+
+		utils.ReplaceOnce(
+			&content,
+			`lazy\(\(\(\)=>[\w\.]+\(\d+\)\.then\(\w+\.bind\(\w+,\d+\)\)\)\)`,
+			`${0}`+appReactMap)
+
+		utils.ReplaceOnce(
+			&content,
+			`\w+\(\)\.createElement\([\w\.]+,\{path:"\/collection"\}`,
+			appEleMap+`${0}`)
+
+		utils.Replace(
+			&content,
+			`\w+\(\)\.createElement\("li",\{className:\w+\},\w+\(\)\.createElement\(\w+,\{uri:"spotify:user:@:collection",to:"/collection"\}`,
+			`Spicetify._sidebarItemToClone=${0}`)
+
+		utils.ReplaceOnce(
+			&content,
+			`\d+:1,\d+:1,\d+:1`,
+			"${0}"+cssEnableMap)
+
+		sidebarItemMatch := utils.SeekToCloseParen(
+			content,
+			`\("li",\{className:\w+\},\w+\(\)\.createElement\(\w+,\{uri:"spotify:user:@:collection",to:"/collection"\}`,
+			'(', ')')
+
+		content = strings.Replace(
+			content,
+			sidebarItemMatch,
+			sidebarItemMatch+",Spicetify._cloneSidebarItem(["+appNameArray+"])",
+			1)
+
+		if flags.SidebarConfig {
+			utils.ReplaceOnce(
+				&content,
+				`return null!=\w+&&\w+\.totalLength(\?\w+\(\)\.createElement\(\w+,\{contextUri:)(\w+)\.uri`,
+				`return true${1}${2}?.uri||""`)
+		}
+
+		return content
 	})
-	if symbol1 == nil || len(symbol1) < 2 {
-		utils.PrintError("Cannot find enough symbol for React and SidebarList.")
+}
+
+func insertHomeConfig(jsPath string, flags Flag) {
+	if !flags.HomeConfig {
 		return
 	}
 
-	symbol2 := utils.FindSymbol("Last requested URI", *zlinkContent, []string{
-		`([\w_]+)\.default,{isActive:/\^spotify:app:home/\.test\(([\w_]+)\)`,
+	utils.ModifyFile(jsPath, func(content string) string {
+		utils.ReplaceOnce(
+			&content,
+			`(\w+\.filter\(\w+\))\.map`,
+			`SpicetifyHomeConfig.arrange(${1}).map`)
+		utils.ReplaceOnce(
+			&content,
+			`;(\(0,\w+\.useEffect\))`,
+			`;${1}(()=>{SpicetifyHomeConfig.addToMenu();return SpicetifyHomeConfig.removeMenu;},[])${0}`)
+		return content
 	})
-	if symbol2 == nil || len(symbol2) < 2 {
-		utils.PrintError("Cannot find enough symbol for Last requested URI.")
-		return
-	}
-
-	react := symbol1[0]
-	list := symbol1[1]
-
-	element := symbol2[0]
-	pageURI := symbol2[1]
-
-	pageLogger := ""
-	menuItems := ""
-
-	for _, name := range appList {
-		menuItems += react +
-			`.default.createElement(` + element +
-			`.default,{isActive:/^spotify:app:` + name +
-			`(\:.*)?$/.test(` + pageURI +
-			`),isBold:!0,label:"` + strings.Title(name) +
-			`",uri:"spotify:app:` + name + `"}),`
-
-		pageLogger += `"` + name + `":"` + name + `",`
-	}
-
-	utils.Replace(
-		zlinkContent,
-		`[\w_]+\.default\.createElement\([\w_]+\.default,\{title:[\w_]+\.default\.get\("(?:desktop\.zlink\.)?your_music\.app_name"`,
-		react+`.default.createElement(`+list+
-			`.default,{title:"Your app"},`+menuItems+`)),`+
-			react+`.default.createElement("div",{className:"LeftSidebar__section"},${0}`,
-	)
-
-	utils.Replace(
-		zlinkContent,
-		`EMPTY:"empty"`,
-		pageLogger+`${0}`,
-	)
 }
 
 func getAssetsPath(themeFolder string) string {

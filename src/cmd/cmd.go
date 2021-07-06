@@ -61,7 +61,7 @@ func InitPaths() {
 		spotifyPath = utils.FindAppPath()
 
 		if len(spotifyPath) == 0 {
-			utils.PrintError(`Cannot detect Spotify location. Please manually set "spotify_path" in config.ini`)
+			utils.PrintError(`Cannot detect Spotify location. Please manually set "spotify_path" in config-xpui.ini`)
 			os.Exit(1)
 		}
 
@@ -80,7 +80,7 @@ func InitPaths() {
 			InitPaths()
 			return
 		}
-		utils.PrintError(spotifyPath + ` does not exist or is not a valid path. Please manually set "spotify_path" in config.ini to correct directory of Spotify.`)
+		utils.PrintError(spotifyPath + ` does not exist or is not a valid path. Please manually set "spotify_path" in config-xpui.ini to correct directory of Spotify.`)
 		os.Exit(1)
 	}
 
@@ -88,14 +88,14 @@ func InitPaths() {
 
 	if len(prefsPath) != 0 {
 		if _, err := os.Stat(prefsPath); err != nil {
-			utils.PrintError(prefsPath + ` does not exist or is not a valid path. Please manually set "prefs_path" in config.ini to correct path of "prefs" file.`)
+			utils.PrintError(prefsPath + ` does not exist or is not a valid path. Please manually set "prefs_path" in config-xpui.ini to correct path of "prefs" file.`)
 			os.Exit(1)
 		}
 	} else if prefsPath = utils.FindPrefFilePath(); len(prefsPath) != 0 {
 		settingSection.Key("prefs_path").SetValue(prefsPath)
 		cfg.Write()
 	} else {
-		utils.PrintError(`Cannot detect Spotify "prefs" file location. Please manually set "prefs_path" in config.ini`)
+		utils.PrintError(`Cannot detect Spotify "prefs" file location. Please manually set "prefs_path" in config-xpui.ini`)
 		os.Exit(1)
 	}
 
@@ -146,15 +146,14 @@ func InitSetting() {
 		overwriteAssets = err == nil
 	}
 
-	if !replaceColors {
-		return
-	}
-
 	var err error
 	colorCfg, err = ini.InsensitiveLoad(colorPath)
 	if err != nil {
 		utils.PrintError("Cannot open file " + colorPath)
 		replaceColors = false
+	}
+
+	if !replaceColors {
 		return
 	}
 
@@ -174,6 +173,7 @@ func InitSetting() {
 
 	schemeSection, err := colorCfg.GetSection(schemeName)
 	if err != nil {
+		println("Err")
 		colorSection = sections[1]
 		return
 	}
@@ -183,7 +183,7 @@ func InitSetting() {
 
 // GetConfigPath returns location of config file
 func GetConfigPath() string {
-	return filepath.Join(spicetifyFolder, "config.ini")
+	return filepath.Join(spicetifyFolder, "config-xpui.ini")
 }
 
 // GetSpotifyPath returns location of Spotify client

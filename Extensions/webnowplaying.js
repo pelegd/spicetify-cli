@@ -5,43 +5,47 @@
 /// <reference path="../globals.d.ts" />
 
 (function WebNowPlaying() {
+    if (!Spicetify.CosmosAsync || !Spicetify.Platform) {
+        setTimeout(WebNowPlaying, 500);
+        return;
+    }
+
     let currentMusicInfo;
     let ws;
     let currState = 0;
+    const storage = {};
+    function updateStorage(data) {
+        if (!data?.track?.metadata) {
+            return;
+        }
+        const meta = data.track.metadata;
+        storage.TITLE = meta.title;
+        storage.ALBUM = meta.album_title;
+        storage.DURATION = convertTimeToString(parseInt(meta.duration));
+        storage.STATE = !data.is_paused ? 1 : 2;
+        storage.REPEAT = data.options.repeating_track ? 2 : (data.options.repeating_context ? 1 : 0);
+        storage.SHUFFLE = data.options.shuffling_context ? 1 : 0;
+        storage.ARTIST = meta.artist_name;
+        let artistCount = 1;
+        while (meta["artist_name:" + artistCount]) {
+            storage.ARTIST += ", " + meta["artist_name:" + artistCount];
+            artistCount++;
+        }
+        if (!storage.ARTIST) {
+            storage.ARTIST = meta.album_title; // Podcast
+        }
+        Spicetify.Platform.LibraryAPI.contains(data.track.uri)
+            .then(([added]) => storage.RATING = (added ? 5 : 0));
+        
+        const cover = meta.image_xlarge_url;
+        if (cover?.indexOf("localfile") === -1) {
+            storage.COVER = "https://i.scdn.co/image/" + cover.substring(cover.lastIndexOf(":") + 1);
+        } else {
+            storage.COVER = "";
+        }
+    }
 
-    const info = {
-        STATE: () => (Spicetify.Player.isPlaying() ? 1 : 2),
-        TITLE: () => Spicetify.Player.data.track.metadata.title || "N/A",
-        ARTIST: () => {
-            if (Spicetify.URI.isShow(Spicetify.Player.data.track.uri)) {
-                return info.ALBUM();
-            }
-
-            return document.querySelector("#view-player-footer .artist").innerText
-        },
-        ALBUM: () => Spicetify.Player.data.track.metadata.album_title || "N/A",
-        DURATION: () => convertTimeToString(Spicetify.Player.getDuration()),
-        POSITION: () => convertTimeToString(Spicetify.Player.getProgress()),
-        VOLUME: () => Math.round(Spicetify.Player.getVolume() * 100),
-        RATING: () =>
-            Spicetify.LiveAPI(Spicetify.Player.data.track.uri).get("added")
-                ? 5
-                : 0,
-        REPEAT: () => Spicetify.Player.getRepeat(),
-        SHUFFLE: () => (Spicetify.Player.getShuffle() ? 1 : 0),
-        COVER: () => {
-            const cover =
-                Spicetify.Player.data.track.metadata.image_xlarge_url || "";
-            if (cover !== "" && cover.indexOf("localfile") === -1) {
-                return (
-                    "https://i.scdn.co/image/" +
-                    cover.substring(cover.lastIndexOf(":") + 1)
-                );
-            }
-
-            return "";
-        },
-    };
+    Spicetify.CosmosAsync.sub("sp://player/v2/main", updateStorage);
 
     function updateInfo() {
         if (!Spicetify.Player.data && currState !== 0) {
@@ -49,9 +53,13 @@
             currState = 0;
             return;
         }
-        for (const field in info) {
+
+        storage.POSITION = convertTimeToString(Spicetify.Player.getProgress());
+        storage.VOLUME = Math.round(Spicetify.Player.getVolume() * 100);
+
+        for (const field in storage) {
             try {
-                const data = info[field].call();
+                const data = storage[field];
                 if (data !== undefined && currentMusicInfo[field] !== data) {
                     ws.send(`${field}:${data}`);
                     currentMusicInfo[field] = data;
@@ -94,8 +102,18 @@
                 break;
             case "RATING":
                 const like = parseInt(info) > 3;
-                const isLiked = Spicetify.Player.getHeart();
+                const isLiked = storage.RATING > 3;
                 if ((like && !isLiked) || (!like && isLiked)) {
+                    Spicetify.Player.toggleHeart();
+                }
+                break;
+            case "TOGGLETHUMBSUP":
+                if (!(storage.RATING > 3)) {
+                    Spicetify.Player.toggleHeart();
+                }
+                break;
+            case "TOGGLETHUMBSDOWN":
+                if (storage.RATING > 3) {
                     Spicetify.Player.toggleHeart();
                 }
                 break;
@@ -150,9 +168,6 @@
         if (minutes < 60) {
             return `${minutes}:${pad(seconds % 60, 2)}`;
         }
-        return `${Math.floor(minutes / 60)}:${pad(minutes % 60, 2)}:${pad(
-            seconds % 60,
-            2
-        )}`;
+        return `${Math.floor(minutes / 60)}:${pad(minutes % 60, 2)}:${pad(seconds % 60, 2)}`;
     }
 })();

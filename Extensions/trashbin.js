@@ -7,28 +7,9 @@
 /// <reference path="../globals.d.ts" />
 
 (function TrashBin() {
-    /**
-     * By default, trash songs list is saved in Spicetify.LocalStorage but
-     * everything will be cleaned if Spotify is uninstalled. So instead
-     * of collecting trash songs again, you can use JsonBin service to
-     * store your list, which is totally free and fast. Go to website
-     * https://jsonbin.io/ , create a jsonbin with default object:
+    const skipBackBtn = document.querySelector(".main-skipBackButton-button");
 
-{
-    "trashSongList": {},
-    "trashArtistList": {}
-}
-
-     * and hit Create. After that, it will generate an Access URL, hit Copy and
-     * paste it to constant jsonBinURL below. URL should look like this:
-
-        https://api.jsonbin.io/b/XXXXXXXXXXXXXXXXXXXX
-
-     * Save this file, run "apply" command in Spicetify to push change.
-     */
-    const jsonBinURL = "";
-
-    if (!Spicetify.Player.data || (!jsonBinURL && !Spicetify.LocalStorage)) {
+    if (!Spicetify.Player.data || !Spicetify.LocalStorage || !skipBackBtn) {
         setTimeout(TrashBin, 1000);
         return;
     }
@@ -40,36 +21,16 @@
     const THROW_TEXT = "Throw to Trashbin";
     const UNTHROW_TEXT = "Take out of Trashbin";
 
-    // Fetch stored trash tracks and artists list
-    if (jsonBinURL) {
-        fetch(`${jsonBinURL}/latest`)
-            .then((res) => res.json())
-            .then((data) => {
-                trashSongList = data["trashSongList"];
-                trashArtistList = data["trashArtistList"];
+    trashSongList =
+        JSON.parse(Spicetify.LocalStorage.get("TrashSongList")) || {};
+    trashArtistList =
+        JSON.parse(Spicetify.LocalStorage.get("TrashArtistList")) || {};
 
-                if (!trashSongList || !trashArtistList) {
-                    trashSongList = trashSongList || {};
-                    trashArtistList = trashArtistList || {};
-
-                    putDataOnline();
-                }
-            })
-            .catch(console.log);
-    } else {
-        trashSongList =
-            JSON.parse(Spicetify.LocalStorage.get("TrashSongList")) || {};
-        trashArtistList =
-            JSON.parse(Spicetify.LocalStorage.get("TrashArtistList")) || {};
-
-        putDataLocal();
-    }
+    putDataLocal();
 
     // Tracking when users hit previous button.
     // By doing that, user can return to thrown song to take it out of trashbin.
-    document
-        .getElementById("player-button-previous")
-        .addEventListener("click", () => (userHitBack = true));
+    skipBackBtn.addEventListener("click", () => (userHitBack = true));
 
     Spicetify.Player.addEventListener("songchange", watchChange);
 
@@ -154,7 +115,7 @@
             delete list[uri];
         }
 
-        storeList();
+        putDataLocal();
     }
 
     /**
@@ -188,27 +149,6 @@
         shouldAddContextMenu,
     );
     cntxMenu.register();
-
-    function storeList() {
-        if (jsonBinURL) {
-            putDataOnline();
-        } else {
-            putDataLocal();
-        }
-    }
-
-    function putDataOnline() {
-        fetch(`${jsonBinURL}`, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                trashSongList,
-                trashArtistList,
-            }),
-        }).catch(console.log);
-    }
 
     function putDataLocal() {
         Spicetify.LocalStorage.set(

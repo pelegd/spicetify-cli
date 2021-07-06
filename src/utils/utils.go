@@ -145,6 +145,7 @@ func CopyFile(srcPath, dest string) error {
 	}
 	defer fSrc.Close()
 
+	CheckExistAndCreate(dest)
 	destPath := filepath.Join(dest, filepath.Base(srcPath))
 	fDest, err := os.OpenFile(
 		destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0700)
@@ -166,6 +167,15 @@ func CopyFile(srcPath, dest string) error {
 func Replace(input *string, regexpTerm string, replaceTerm string) {
 	re := regexp.MustCompile(regexpTerm)
 	*input = re.ReplaceAllString(*input, replaceTerm)
+}
+
+func ReplaceOnce(input *string, regexpTerm string, replaceTerm string) {
+	re := regexp.MustCompile(regexpTerm)
+	matches := re.FindAllString(*input, -1)
+	if len(matches) > 0 {
+		toReplace := re.ReplaceAllString(matches[0], replaceTerm)
+		*input = strings.Replace(*input, matches[0], toReplace, 1)
+	}
 }
 
 // ModifyFile opens file, changes file content by executing
@@ -255,4 +265,26 @@ func CreateJunction(location, destination string) error {
 	}
 
 	return nil
+}
+
+func SeekToCloseParen(content string, regexpTerm string, leftChar, rightChar byte) string {
+	loc := regexp.MustCompile(regexpTerm).FindStringIndex(content)
+	if len(loc) > 0 {
+		start := loc[0]
+		end := start
+		count := 0
+		for {
+			if content[end] == leftChar {
+				count += 1
+			} else if content[end] == rightChar {
+				count -= 1
+			}
+			end += 1
+			if count == 0 {
+				break
+			}
+		}
+		return content[start:end]
+	}
+	return ""
 }
